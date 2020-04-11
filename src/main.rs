@@ -4,9 +4,9 @@
 use std::net::{Shutdown, SocketAddr};
 use std::time::Duration;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
+use tokio::net;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{timeout, Elapsed};
-use tokio::{fs, net};
 
 // Unless otherwise specified, all quotes are from RFC 8446 (TLS 1.3).
 
@@ -303,7 +303,9 @@ async fn connect_backend<R: AsyncReadExt>(
     // After this point, all I/O errors are internal errors.
 
     // If this file exists, turn on the PROXY protocol.
-    if fs::metadata(path.join("send-proxy-v1")).await.is_ok() {
+    // NOTE: This is a blocking syscall, but stat should be fast enough that it's not worth
+    // spawning off a thread.
+    if std::fs::metadata(path.join("send-proxy-v1")).is_ok() {
         let header = format!(
             "PROXY {} {} {} {} {}\r\n",
             match remote {

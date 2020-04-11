@@ -1,0 +1,8 @@
+[package]
+name = "sniproxy"
+version = "0.1.0"
+authors = ["Jamey Sharp <jamey@minilop.net>"]
+edition = "2018"
+
+[dependencies]
+tokio = { version = "0.2.16", features = ["full"] }

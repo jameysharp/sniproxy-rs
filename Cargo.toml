@@ -7,3 +7,10 @@ edition = "2018"
 [dependencies.tokio]
 version = "0.2"
 features = ["rt-core", "io-util", "tcp", "uds", "time", "macros", "signal"]
+
+[profile.release]
+lto = "fat"
+# This is vaguely security-sensitive software, so overflows and panics should
+# fail quickly. Anyway it's fully stateless so restarting it doesn't hurt much.
+overflow-checks = true
+panic = "abort"

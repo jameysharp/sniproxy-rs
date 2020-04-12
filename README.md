@@ -41,8 +41,49 @@ Each hostname subdirectory can have these files:
 
 [PROXY protocol]: https://www.haproxy.org/download/2.1/doc/proxy-protocol.txt
 
-These files or directories can also be symlinks, which allows a few
-tricks.
+For example, if your configuration directory is called `hosts/`, and
+you're hosting a web site at "[🕸💍.ws][webring]", then you'd put the
+backend socket for that site in `hosts/xn--sr8hvo.ws/tls-socket`, and
+run sniproxy with the `hosts` directory as its current working
+directory.
+
+[webring]: https://🕸💍.ws
+
+That's it! You have a reverse proxy now.
+
+## Tips and tricks
+
+If you want, you can allow users on your server to configure new
+hostnames without any administrator intervention. Set the configuration
+directory either to mode 1777 (like `/tmp`) or to mode 1775, to
+authorize everyone or just people in a specific group. By setting the
+"sticky bit", only the person who created a hostname can delete it.
+And because sniproxy only looks for a canonical version of the hostname
+(no trailing dot, all lowercase, ASCII compatible encoding), there's no
+way that two people can register the same hostname; the filesystem
+enforces uniqueness.
+
+If instead you want every new hostname to get reviewed by an
+administrator first, then you can (and probably should) still delegate
+configuration of each hostname to different user accounts, just using
+standard Unix ownership and permissions on the per-hostname directories.
+Then the operating system ensures that people can't reconfigure
+hostnames they aren't authorized to manage.
+
+You may want to have a look at `acl(5)` for how to give the user which
+sniproxy runs under access to everything in your configuration
+directory, even for those directories which are not owned by that
+sniproxy user or group.
+
+You can change the configuration without restarting sniproxy: it looks
+up the target socket each time a connection comes in, and doesn't need
+to know which hostnames to serve in advance. This is especially
+important if untrusted users will be managing any hostname
+configurations because allowing them to restart or reload the reverse
+proxy is risky.
+
+The configuration files or directories can also be symlinks, which
+allows a few tricks.
 
 - If multiple hostnames should be served by the same backend, they can
   all be symlinked to one directory, rather than configuring the backend
@@ -52,19 +93,19 @@ tricks.
   atomically replace the symlink to change which backend process serves
   that hostname, without downtime.
 
-For example, if your configuration directory is called `hosts/`, and
-you're hosting a web site at "[🕸💍.ws][webring]", then you'd put the
-backend socket for that site in `hosts/xn--sr8hvo.ws/tls-socket`, and
-run sniproxy with the `hosts` directory as its current working
-directory.
+This program is designed to be able to run in a minimal chroot
+environment, but if you use symlinks in your configuration make sure
+that they are relative links which stay inside the chroot.
 
-[webring]: https://🕸💍.ws
+Because the client's raw TLS protocol stream is forwarded to the backend
+unmodified, your backend can negotiate any TLS options you want it to,
+including:
 
-You can change the configuration without restarting sniproxy: it looks
-up the target socket each time a connection comes in, and doesn't need
-to know which hostnames to serve in advance.
+- the Let's Encrypt [tls-alpn-01][] verification method
+- HTTP/2 via ALPN
+- TLS client certificates
 
-That's it! You have a reverse proxy now.
+[tls-alpn-01]: https://tools.ietf.org/html/rfc8737
 
 To stop the proxy gracefully, send it a `SIGHUP` signal. (This currently
 closes all connections immediately but that isn't what I intended?)

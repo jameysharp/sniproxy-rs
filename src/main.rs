@@ -1,7 +1,7 @@
 // This implementation is inspired by https://github.com/dlundquist/sniproxy, but I wrote it from
 // scratch based on a careful reading of the TLS 1.3 specification.
 
-use std::net::{Shutdown, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
 use tokio::net;
@@ -354,19 +354,18 @@ async fn handle_connection(mut client: net::TcpStream, local: SocketAddr, remote
 
     // Ignore errors in either direction; just half-close the destination when the source stops
     // being readable. And if that fails, ignore that too.
-    async fn copy_all<R, W, S, F>(mut from: R, mut to: W, shutdown: F)
+    async fn copy_all<R, W>(mut from: R, mut to: W)
     where
         R: AsyncReadExt + Unpin,
-        W: AsyncWriteExt + Unpin + AsRef<S>,
-        F: FnOnce(&S, Shutdown) -> io::Result<()>,
+        W: AsyncWriteExt + Unpin,
     {
         let _ = io::copy(&mut from, &mut to).await;
-        let _ = shutdown(to.as_ref(), Shutdown::Write);
+        let _ = to.shutdown().await;
     }
 
     tokio::join!(
-        copy_all(client_in, backend_out, |out, how| out.shutdown(how)),
-        copy_all(backend_in, client_out, |out, how| out.shutdown(how)),
+        copy_all(client_in, backend_out),
+        copy_all(backend_in, client_out),
     );
 }
 
@@ -403,5 +402,7 @@ async fn main_loop() -> io::Result<()> {
 async fn main() -> io::Result<()> {
     let local = task::LocalSet::new();
     local.run_until(main_loop()).await?;
-    timeout(Duration::from_secs(10), local).await.map_err(|_| ErrorKind::TimedOut.into())
+    timeout(Duration::from_secs(10), local)
+        .await
+        .map_err(|_| ErrorKind::TimedOut.into())
 }

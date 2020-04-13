@@ -8,6 +8,16 @@ forward the connection to.
 
 [SNI]: https://en.wikipedia.org/wiki/Server_Name_Indication
 
+This implementation was heavily inspired by another [sniproxy][], but I
+took a slightly different approach:
+
+[sniproxy]: https://github.com/dlundquist/sniproxy
+
+- only supports TLS&mdash;handling HTTP is left to other tools
+- no fancy regex hostname matches or other complex configuration
+- implemented from scratch based on a careful reading of the TLS 1.3
+  specification, including support for TLS record fragmentation
+
 Only Unix-like systems, with support for Unix domain sockets and passing
 sockets as file descriptors, are supported. A Windows-friendly version
 probably wouldn't be too hard, but I can't test it.

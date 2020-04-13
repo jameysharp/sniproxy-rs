@@ -101,18 +101,47 @@ Because the client's raw TLS protocol stream is forwarded to the backend
 unmodified, your backend can negotiate any TLS options you want it to,
 including:
 
-- the Let's Encrypt [tls-alpn-01][] verification method
-- HTTP/2 via ALPN
-- TLS client certificates
+- application protocol negotiation via [ALPN][], such as for HTTP/2
+- the ACME (Let's Encrypt) [tls-alpn-01][] verification method
+- optional or required client certificates
+- pre-shared keys
+- TLS versions or extensions which haven't been invented yet
 
+[ALPN]: https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation
 [tls-alpn-01]: https://tools.ietf.org/html/rfc8737
 
 To stop the proxy gracefully, send it a `SIGHUP` signal. (This currently
 closes all connections immediately but that isn't what I intended?)
 
-## Configuration examples
+# Building
 
-### systemd
+This project is implemented in [Rust][] so you need [Cargo][] installed.
+The conventional `cargo build` or [`cargo install`][install] commands
+work, but you might want some additional options.
+
+[Rust]: https://www.rust-lang.org/
+[Cargo]: https://doc.rust-lang.org/cargo/getting-started/installation.html
+[install]: https://doc.rust-lang.org/book/ch14-04-installing-binaries.html
+
+If you want to statically link your build of sniproxy and you're on
+Linux, you can build with musl libc. This can make deployment easier
+since the resulting program is a single file with no external
+dependencies. If you installed Rust using `rustup`, you should be able
+to run commands something like this to get a static binary:
+
+```sh
+rustup target add x86_64-unknown-linux-musl
+cargo build --target=x86_64-unknown-linux-musl --release
+```
+
+Replace `x86_64` with the output of `uname -m` from whichever computer you
+want to run this program on. It doesn't even have to be the same as the
+architecture where you have Rust installed: see `rustc --print
+target-list` for the list of targets you can compile for.
+
+# Configuration examples
+
+## systemd
 
 If you use systemd, you can configure a pair of units to run sniproxy.
 

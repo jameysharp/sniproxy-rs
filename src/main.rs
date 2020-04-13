@@ -390,8 +390,11 @@ async fn main() -> io::Result<()> {
             result = listener.accept() => result.map(|(socket, remote)| {
                 let local = socket.local_addr().unwrap_or(local);
                 tokio::spawn(handle_connection(socket, local, remote));
-            }),
-            Some(_) = graceful_shutdown.recv() => return Ok(()),
-        )?;
+            })?,
+            Some(_) = graceful_shutdown.recv() => break,
+        );
     }
+
+    println!("got SIGHUP, shutting down");
+    Ok(())
 }

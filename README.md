@@ -110,8 +110,10 @@ including:
 [ALPN]: https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation
 [tls-alpn-01]: https://tools.ietf.org/html/rfc8737
 
-To stop the proxy gracefully, send it a `SIGHUP` signal. (This currently
-closes all connections immediately but that isn't what I intended?)
+To stop the proxy gracefully, send it a `SIGHUP` signal. It will stop
+listening for new connections, so you can start a new copy immediately,
+but it will wait up to ten seconds for existing connections to close
+before exiting.
 
 # Building
 

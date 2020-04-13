@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
 use tokio::net;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::task;
 use tokio::time::{timeout, Elapsed};
 
 // Unless otherwise specified, all quotes are from RFC 8446 (TLS 1.3).
@@ -369,8 +370,7 @@ async fn handle_connection(mut client: net::TcpStream, local: SocketAddr, remote
     );
 }
 
-#[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main_loop() -> io::Result<()> {
     // safety: the rest of the program must not use stdin
     let listener = unsafe { std::os::unix::io::FromRawFd::from_raw_fd(0) };
 
@@ -389,7 +389,7 @@ async fn main() -> io::Result<()> {
         tokio::select!(
             result = listener.accept() => result.map(|(socket, remote)| {
                 let local = socket.local_addr().unwrap_or(local);
-                tokio::spawn(handle_connection(socket, local, remote));
+                task::spawn_local(handle_connection(socket, local, remote));
             })?,
             Some(_) = graceful_shutdown.recv() => break,
         );
@@ -397,4 +397,11 @@ async fn main() -> io::Result<()> {
 
     println!("got SIGHUP, shutting down");
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let local = task::LocalSet::new();
+    local.run_until(main_loop()).await?;
+    timeout(Duration::from_secs(10), local).await.map_err(|_| ErrorKind::TimedOut.into())
 }

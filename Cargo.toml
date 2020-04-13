@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies.tokio]
 version = "0.2"
-features = ["rt-core", "io-util", "tcp", "uds", "time", "macros", "signal"]
+features = ["rt-core", "rt-util", "io-util", "tcp", "uds", "time", "macros", "signal"]
 
 [profile.release]
 lto = "fat"

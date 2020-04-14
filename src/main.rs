@@ -1,8 +1,12 @@
 // This implementation is inspired by https://github.com/dlundquist/sniproxy, but I wrote it from
 // scratch based on a careful reading of the TLS 1.3 specification.
 
+use nix::unistd::chdir;
+use std::future::Future;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
 use tokio::net;
@@ -274,6 +278,49 @@ async fn get_server_name<R: AsyncReadExt>(
     Err(TlsError::UnrecognizedName)
 }
 
+/// The first time the future is polled, run it inside the given path; after that, just delegate to
+/// it. This is useful for non-blocking connect(2) on a Unix socket, where path resolution only
+/// happens during the initial call to connect.
+struct InPath<'a, F> {
+    path: Option<&'a Path>,
+    future: F,
+}
+
+impl<'a, F> InPath<'a, F> {
+    pin_utils::unsafe_unpinned!(path: Option<&'a Path>);
+    pin_utils::unsafe_pinned!(future: F);
+}
+
+fn in_path<F, P: AsRef<Path>>(path: &P, future: F) -> InPath<F> {
+    InPath {
+        path: Some(path.as_ref()),
+        future,
+    }
+}
+
+impl<O, F: Future<Output = io::Result<O>>> Future for InPath<'_, F> {
+    type Output = <F as Future>::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        if let Some(path) = self.as_mut().path().take() {
+            if let Err(e) = chdir(path) {
+                return Poll::Ready(Err(if let nix::Error::Sys(errno) = e {
+                    io::Error::from_raw_os_error(errno as i32)
+                } else {
+                    io::Error::new(io::ErrorKind::Other, e)
+                }));
+            }
+            let result = self.future().poll(cx);
+            if let Err(e) = chdir("..") {
+                panic!("failed to return from path {}: {}", path.display(), e);
+            }
+            result
+        } else {
+            self.future().poll(cx)
+        }
+    }
+}
+
 async fn connect_backend<R: AsyncReadExt>(
     source: R,
     local: SocketAddr,
@@ -293,7 +340,7 @@ async fn connect_backend<R: AsyncReadExt>(
     // - and is a listening socket (ConnectionRefused)
     // If it isn't a valid server name, then that's the error to report. Anything else is not the
     // client's fault.
-    let mut backend = net::UnixStream::connect(name.join("tls-socket"))
+    let mut backend = in_path(&name, net::UnixStream::connect("tls-socket"))
         .await
         .map_err(|e| match e.kind() {
             ErrorKind::NotFound | ErrorKind::PermissionDenied | ErrorKind::ConnectionRefused => {

@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Jamey Sharp <jamey@minilop.net>"]
 edition = "2018"
 
+[dependencies]
+nix = "0.17.0"
+pin-utils = "0.1.0-alpha.4"
+
 [dependencies.tokio]
 version = "0.2"
 features = ["rt-core", "rt-util", "io-util", "tcp", "uds", "time", "macros", "signal"]

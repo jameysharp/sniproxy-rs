@@ -2,6 +2,7 @@
 // scratch based on a careful reading of the TLS 1.3 specification.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ErrorKind};
 use tokio::net;
@@ -136,7 +137,9 @@ impl<R: AsyncReadExt> TlsHandshakeReader<R> {
     }
 }
 
-async fn get_server_name<R: AsyncReadExt>(source: &mut TlsHandshakeReader<R>) -> TlsResult<String> {
+async fn get_server_name<R: AsyncReadExt>(
+    source: &mut TlsHandshakeReader<R>,
+) -> TlsResult<PathBuf> {
     // section 4.1.2: "When a client first connects to a server, it is REQUIRED to send the
     // ClientHello as its first TLS message."
     if source.read().await? != TLS_HANDSHAKE_TYPE_CLIENT_HELLO {
@@ -257,7 +260,7 @@ async fn get_server_name<R: AsyncReadExt>(source: &mut TlsHandshakeReader<R>) ->
 
             // safety: every byte was already checked for being a valid subset of UTF-8
             let name = unsafe { String::from_utf8_unchecked(name) };
-            return Ok(name);
+            return Ok(name.into());
         }
 
         // None of the names were of the right type, and section 4.2 says "There MUST NOT be more
@@ -282,8 +285,6 @@ async fn connect_backend<R: AsyncReadExt>(
     // might be a TlsError. So there are two "?" here to unwrap both.
     let name = timeout(Duration::from_secs(10), get_server_name(&mut source)).await??;
 
-    let path: &std::path::Path = name.as_ref();
-
     // The client sent a name and it's been validated to be safe to use as a path. Consider it a
     // valid server name if connecting to the path doesn't return any of these errors:
     // - is a directory (NotFound after joining a relative path)
@@ -292,7 +293,7 @@ async fn connect_backend<R: AsyncReadExt>(
     // - and is a listening socket (ConnectionRefused)
     // If it isn't a valid server name, then that's the error to report. Anything else is not the
     // client's fault.
-    let mut backend = net::UnixStream::connect(path.join("tls-socket"))
+    let mut backend = net::UnixStream::connect(name.join("tls-socket"))
         .await
         .map_err(|e| match e.kind() {
             ErrorKind::NotFound | ErrorKind::PermissionDenied | ErrorKind::ConnectionRefused => {
@@ -306,7 +307,7 @@ async fn connect_backend<R: AsyncReadExt>(
     // If this file exists, turn on the PROXY protocol.
     // NOTE: This is a blocking syscall, but stat should be fast enough that it's not worth
     // spawning off a thread.
-    if std::fs::metadata(path.join("send-proxy-v1")).is_ok() {
+    if std::fs::metadata(name.join("send-proxy-v1")).is_ok() {
         let header = format!(
             "PROXY {} {} {} {} {}\r\n",
             match remote {

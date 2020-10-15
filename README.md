@@ -41,6 +41,11 @@ and in lowercase ASCII. (So for international domain names, use the
 
 [A-label]: https://tools.ietf.org/html/rfc5890#section-2.3.2.1
 
+To help you get hostnames into the right form, there's a
+`sniproxy-hostname` utility. It's especially useful if you have an
+international domain name, but it also serves to check that the hostname
+is valid.
+
 Each hostname subdirectory can have these files:
 
 - `tls-socket` (required): a Unix domain socket that your backend
@@ -60,6 +65,29 @@ directory.
 [webring]: https://🕸💍.ws
 
 That's it! You have a reverse proxy now.
+
+## Hashed hostnames
+
+By default, sniproxy expects the per-host directory to be named after
+the SNI hostname, but you can use `cargo build --features hashed` to
+name the directory after the hash of the hostname instead. In this case
+`sniproxy-hostname` will report the hashed name that `sniproxy` expects.
+
+It's configurable because you may or may not want hashed hostnames:
+
+- The `sun_path` field of `sockaddr_un` is disappointingly short.
+  According to [unix(7)][], "some implementations have `sun_path` as
+  short as 92 bytes." On Linux it's 108 bytes, but this is still shorter
+  than the 254 bytes that a hostname can be. So if you have hostnames
+  longer than the limit, you need them hashed. But probably most
+  deployments don't need this.
+
+- With hashed hostnames, someone with read access to the hosts directory
+  can't trivially enumerate the set of hostnames that the proxy is
+  configured to answer for. That may be either a bug or a feature
+  depending on your goals.
+
+[unix(7)]: https://man7.org/linux/man-pages/man7/unix.7.html
 
 ## Tips and tricks
 
@@ -220,3 +248,39 @@ s6-setuidgid sniproxy
 cd /srv/sniproxy
 /usr/bin/sniproxy
 ```
+
+# Alternative design choices
+
+I considered a lot of ways to implement this which I decided wouldn't
+work. Some of them are covered in my blog post where I introduced this
+project: See [The most general reverse proxy][blog-intro], posted
+2020-04-24.
+
+[blog-intro]: https://jamey.thesharps.us/2020/04/24/most-general-reverse-proxy/
+
+Besides hashed hostnames, I considered several other ways to deal with
+the limited length of Unix socket pathnames:
+
+- `chdir` immediately before `connect`, and then `chdir("..")`. This
+  didn't work for several reasons: if the first chdir entered a symlink,
+  `..` could then point somewhere other than the original hosts
+  directory; it's not thread-safe; and I successfully made it safe for
+  other futures but it was real ugly.
+
+- a sequence of `socketpair`, `fork`, `chdir`, `connect` followed by
+  passing the newly-connected file descriptor back to the parent, but
+  that's some pretty heavy-weight system calls for this job.
+
+- automatically create symlinks with the hashed names so people can
+  still name their per-host directories after the full hostname, but
+  that's hard to get right without risking remote attackers forcing the
+  server to create an unbounded number of symlinks, or risking local
+  attackers taking over other users' hostnames.
+
+- look for both hashed and unhashed names and use whichever is present,
+  but this still allows local users to take over other users' hostnames,
+  and isn't much easier to use than just requiring all hostnames to be
+  hashed.
+
+So I'm not delighted with the current approach but I think it is the
+right trade-off of reliable and safe implementation against ease-of-use.
